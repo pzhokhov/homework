@@ -128,12 +128,13 @@ def main():
     print('std expert returns = {}'.format(np.std(expert_data['returns'])))
     print('mean bc returns = {}'.format(np.mean(returns)))
     print('std bc returns = {}'.format(np.std(returns)))
-    print('| {} | {:.1f} | {:.1f} | {:.1f} | {:.1f} |'.format(
+    print('| {} | {:.1f} | {:.1f} | {:.1f} | {:.1f} | {} |'.format(
         args.envname, 
         np.mean(returns),
         np.std(returns),
         np.mean(expert_data['returns']),
-        np.std(expert_data['returns'])
+        np.std(expert_data['returns']),
+        args.num_rollouts
     ))
 if __name__ == '__main__':
     main()
