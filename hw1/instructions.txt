@@ -1,0 +1,2 @@
+python run_bc.py experts/Humanoid-v1.pkl Humanoid-v2 --num_rollouts=100 --expert-data humanoid_100.pkl
+for pkl in $(ls experts/); do env=${pkl%-v1.pkl}; python run_bc.py experts/${pkl} ${env}-v2 --num_rollouts=100 --expert-data=${env}_100.pkl | tail -1; done
