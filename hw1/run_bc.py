@@ -18,36 +18,20 @@ import gym
 import load_policy
 import pickle
 
-def generate_expert_data(args):
-    
+
+
+def load_expert(envname):
+    return load_expert_file(os.path.join('experts', envname+'-v1.pkl'))
+
+def load_expert_file(policy_file):
     print('loading and building expert policy')
-    policy_fn = load_policy.load_policy(args.expert_policy_file)
+    policy_fn = load_policy.load_policy(policy_file)
     print('loaded and built')
-
-    with tf.Session():
-        tf_util.initialize()
-
-        returns, observations, actions = test_policy(
-            policy_fn,
-            envname=args.envname,
-            num_rollouts=args.num_rollouts,
-            render=args.render,
-            max_timesteps=args.max_timesteps
-        )
-        print('returns', returns)
-        print('mean return', np.mean(returns))
-        print('std of return', np.std(returns))
-
-        expert_data = {'observations': np.array(observations),
-                       'actions': np.array(actions), 
-                       'returns': returns}
-
-        return expert_data
-
+    return policy_fn
 
 def test_policy(policy_fn, envname, num_rollouts, max_timesteps=None, render=False):
     import gym
-    env = gym.make(envname)
+    env = gym.make(envname+'-v2')
     max_steps = max_timesteps or env.spec.timestep_limit
 
     returns = []
@@ -76,10 +60,67 @@ def test_policy(policy_fn, envname, num_rollouts, max_timesteps=None, render=Fal
     return returns, observations, actions
 
 
+def dagger(args):
+    expert_policy  = load_expert(args.envname)
+    expert_returns, expert_observations, expert_actions = test_policy(expert_policy, args.envname, args.num_rollouts)
+
+    observations_shape = expert_observations[0].shape
+    num_actions = expert_actions[0].shape[-1]
+
+    mean_expert_return = np.mean(np.array(expert_returns))
+    std_expert_return = np.std(np.array(expert_returns))
+
+    current_model = None
+    
+    for i in range(args.dagger_iter):
+        if args.dagger_reinitialize or current_model is None:
+            current_model = build_model(observations_shape, num_actions)
+            current_policy = lambda o: current_model.predict(o)            
+
+        print('*** DAgger iteration {} ***'.format(i))
+
+        current_model.fit(
+            x=np.array(expert_observations),
+            y=np.array(expert_actions).reshape(-1, num_actions),
+            batch_size=args.dagger_batchsize,
+            epochs=args.dagger_nepoch
+        )
+ 
+        returns, observations, actions = test_policy(current_policy, args.envname, args.num_rollouts)
+        mean_return = np.mean(np.array(returns))
+        std_return = np.std(np.array(returns))
+
+        print('mean reward = {}'.format(np.mean(np.array(returns))))        
+        print('std reward = {}'.format(np.std(np.array(returns))))
+
+        actions = expert_policy(observations)
+
+        expert_observations.append(observations)
+        expert_actions.append(actions)
+        
+    return current_policy, mean_return, std_return, mean_expert_return, std_expert_return
+
+
+def build_model(observations_shape, num_actions):
+    from keras import Sequential
+    from keras.layers import Dense
+
+    model = Sequential()
+
+    import pdb; pdb.set_trace()
+    model.add(Dense(32, input_shape=observations_shape, activation='relu'))
+    model.add(Dense(32, activation='relu'))
+    model.add(Dense(num_actions, activation='tanh'))
+
+    model.compile(optimizer='adam', loss='mse')
+ 
+    return model
+        
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('expert_policy_file', type=str)
+    # parser.add_argument('expert_policy_file', type=str)
     parser.add_argument('envname', type=str)
     parser.add_argument('--render', action='store_true')
     parser.add_argument("--max_timesteps", type=int)
@@ -88,52 +129,27 @@ def main():
 
     parser.add_argument('--expert-data', type=str, default=None)
 
-    
+    parser.add_argument('--dagger-iter', type=int, default=1)
+    parser.add_argument('--dagger-batchsize', type=int, default=128)
+    parser.add_argument('--dagger-nepoch', type=int, default=1)
+    parser.add_argument('--dagger-reinitialize', action='store_true', default=False)
+
+    tf.Session().__enter__()
+    tf_util.initialize()
 
     args = parser.parse_args()
-
-    if args.expert_data and os.path.exists(args.expert_data):
-        with open(args.expert_data, 'rb') as f:
-            expert_data = pickle.load(f)
-    else:    
-        expert_data = generate_expert_data(args)
-
-    if args.expert_data and not os.path.exists(args.expert_data):
-        with open(args.expert_data, 'wb') as f:
-            pickle.dump(expert_data, f)
     
-    print('observations shape = {}'.format(expert_data['observations'].shape))
-    print('actions shape = {}'.format(expert_data['actions'].shape))
-    
-    observations_shape = expert_data['observations'][0].shape
-    num_actions = expert_data['actions'][0].shape[-1]
-    from keras import Sequential
-    from keras.layers import Dense
-
-    model = Sequential()
-
-    model.add(Dense(32, input_shape=observations_shape, activation='relu'))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(num_actions, activation='linear'))
-
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(x=expert_data['observations'], y=expert_data['actions'].reshape(-1, num_actions), epochs=100, batch_size=128, validation_split=0.1)
-
-    bc_policy = lambda o: model.predict(o)
-        
-    test_rollouts = 100
-    returns, _, _ = test_policy(bc_policy, args.envname, test_rollouts, render=False)
+    policy, mean_return, std_return, mean_expert_return, std_expert_return  = dagger(args)
+         
+    # test_rollouts = 100
+    # returns, _, _ = test_policy(policy, args.envname, test_rollouts, render=False)
        
-    print('mean expert returns = {}'.format(np.mean(expert_data['returns'])))
-    print('std expert returns = {}'.format(np.std(expert_data['returns'])))
-    print('mean bc returns = {}'.format(np.mean(returns)))
-    print('std bc returns = {}'.format(np.std(returns)))
     print('| {} | {:.1f} | {:.1f} | {:.1f} | {:.1f} | {} |'.format(
         args.envname, 
-        np.mean(returns),
-        np.std(returns),
-        np.mean(expert_data['returns']),
-        np.std(expert_data['returns']),
+        mean_return,
+        std_return,
+        mean_expert_return, 
+        std_expert_return,
         args.num_rollouts
     ))
 if __name__ == '__main__':

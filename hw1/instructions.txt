@@ -3,3 +3,7 @@ python run_bc.py experts/Humanoid-v1.pkl Humanoid-v2 --num_rollouts=100 --expert
 
 # to generate the MD table comparing expert and BC agents
 for pkl in $(ls experts/); do env=${pkl%-v1.pkl}; python run_bc.py experts/${pkl} ${env}-v2 --num_rollouts=100; done 2>&1 >train.log | grep "|"
+
+# to generate the plot of humanoid performance vs amount of expert data:
+for rollouts in 3 10 30 100 300 1000 3000; do python run_bc.py experts/Humanoid-v1.pkl Humanoid-v2 --num_rollouts=$rollouts; done &> bc_rollouts.loggnuplot humanoid.gp
+
