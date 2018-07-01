@@ -126,7 +126,7 @@ def train_PG(exp_name='',
         sy_ac_na = tf.placeholder(shape=[None, ac_dim], name="ac", dtype=tf.float32) 
 
     # Define a placeholder for advantages
-    sy_adv_n = tf.placeholder(shape=[None, ac_dim], name='adv', dtype=tf.float32)
+    sy_adv_n = tf.placeholder(shape=[None], name='adv', dtype=tf.float32)
 
 
     #========================================================================================#
@@ -171,7 +171,10 @@ def train_PG(exp_name='',
     if discrete:
         # YOUR_CODE_HERE
         sy_logits_na = build_mlp(
+            input_placeholder=sy_ob_no,    
             output_size=ac_dim, 
+            "policy",
+            n_layers=n_layers, 
         )
            
         sy_sampled_ac = tf.multinomial(sy_logits_na, 1)
@@ -180,8 +183,12 @@ def train_PG(exp_name='',
     else:
         # YOUR_CODE_HERE
         sy_mean = build_mlp(
-            output_size=ac_dim, 
+            input_placeholder=sy_ob_no, 
+            output_size=ac_dim,
+            "policy",
+            n_layers=n_layers 
         )
+
         sy_logstd = tf.variable(dtype=tf.float32, shape=[None, ac_dim]) # logstd should just be a trainable variable, not a network output.
         sy_dist = tf.distributions.Normal(loc=sy_mean, scale=sy_logstd)
 
@@ -195,7 +202,7 @@ def train_PG(exp_name='',
     # Loss Function and Training Operation
     #========================================================================================#
 
-    loss = TODO # Loss function that we'll differentiate to get the policy gradient.
+    loss = - sy_logprob_n * sy_adv_n # Loss function that we'll differentiate to get the policy gradient.
     update_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
 
