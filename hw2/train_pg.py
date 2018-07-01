@@ -34,8 +34,11 @@ def build_mlp(
     #========================================================================================#
 
     with tf.variable_scope(scope):
-        # YOUR_CODE_HERE
-        pass
+        head = input_placeholder
+        for _ in range(n_layers):
+            head = tf.layers.dense(inputs=head, units=size)
+            
+    return tf.layers.dense(inputs=head, units=output_size, activation=output_activation)
 
 def pathlength(path):
     return len(path["reward"])
@@ -123,7 +126,7 @@ def train_PG(exp_name='',
         sy_ac_na = tf.placeholder(shape=[None, ac_dim], name="ac", dtype=tf.float32) 
 
     # Define a placeholder for advantages
-    sy_adv_n = TODO
+    sy_adv_n = tf.placeholder(shape=[None, ac_dim], name='adv', dtype=tf.float32)
 
 
     #========================================================================================#
@@ -167,16 +170,23 @@ def train_PG(exp_name='',
 
     if discrete:
         # YOUR_CODE_HERE
-        sy_logits_na = TODO
-        sy_sampled_ac = TODO # Hint: Use the tf.multinomial op
-        sy_logprob_n = TODO
+        sy_logits_na = build_mlp(
+            output_size=ac_dim, 
+        )
+           
+        sy_sampled_ac = tf.multinomial(sy_logits_na, 1)
+        sy_logprob_n = tf.nn.sparse_softmax_crossentropy_with_logits(logits=sys\_logits_na, labels=sy_sampled_ac)
 
     else:
         # YOUR_CODE_HERE
-        sy_mean = TODO
-        sy_logstd = TODO # logstd should just be a trainable variable, not a network output.
-        sy_sampled_ac = TODO
-        sy_logprob_n = TODO  # Hint: Use the log probability under a multivariate gaussian. 
+        sy_mean = build_mlp(
+            output_size=ac_dim, 
+        )
+        sy_logstd = tf.variable(dtype=tf.float32, shape=[None, ac_dim]) # logstd should just be a trainable variable, not a network output.
+        sy_dist = tf.distributions.Normal(loc=sy_mean, scale=sy_logstd)
+
+        sy_sampled_ac = sy_dist.sample(1)
+        sy_logprob_n = sy_dist.log_prob(sy_sampled_ac)  # Hint: Use the log probability under a multivariate gaussian. 
 
 
 
